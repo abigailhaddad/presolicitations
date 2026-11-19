@@ -146,7 +146,7 @@ gh secret set HF_TOKEN -R abigailhaddad/presolicitations
 
 # 2. Create the dataset and put the card up (the card says what the dataset is and what is withheld)
 .venv/bin/hf auth login                      # or: export HF_TOKEN=<write token> for this shell only
-.venv/bin/hf repo create abigailhaddad/presolicitations --repo-type dataset
+.venv/bin/hf repos create abigailhaddad/presolicitations --repo-type dataset --public
 .venv/bin/hf upload abigailhaddad/presolicitations dataset/README.md README.md --repo-type dataset
 
 # 3. When the local backfill has finished (tail work/backfill.log shows DONE) and this prints "ok": true:
