@@ -124,26 +124,58 @@ The 5,457 notices not yet fetched have no attachment text yet; scan again after 
 * "Personal residence" wording appears in notices (73 descriptions, 109 attachments); the ones read were about
   places (an official residence, patients' homes), not individuals.
 
-## Creating the GitHub repo and the Hugging Face dataset (text only; not run)
+## State of play (2026-11-19)
 
-The active `gh` account is `abigailhaddad-2`; pushing to `abigailhaddad/*` needs the other token.
+* **GitHub:** `abigailhaddad/presolicitations`, public, created and pushed with the `abigailhaddad` account (the
+  active `gh` account is `abigailhaddad-2`, so use `GH_TOKEN=$(gh auth token -u abigailhaddad)` for that repo).
+  The Tests workflow passes on GitHub. No secrets or variables are set; the scheduled daily run stays off until
+  `DAILY_ENABLED` is `true`.
+* **Hugging Face:** `abigailhaddad/presolicitations` does **not exist yet**. Nothing has been uploaded. Create it and
+  upload only once the local backfill has finished and `presol check` passes (commands below).
+* **Local backfill:** `scripts/run_backfill.sh` is running in the background (see below). It writes only to the
+  git-ignored `dataset/`.
+
+## Commands Abigail runs herself (they need her tokens)
 
 ```bash
 cd ~/Documents/repos/presolicitations
+
+# 1. Secret for the daily and backfill workflows (a Hugging Face WRITE token; gh asks for the value, nothing is echoed)
 export GH_TOKEN=$(gh auth token -u abigailhaddad)
-gh repo create abigailhaddad/presolicitations --public --source . --remote origin \
-  --description "Daily append-only mirror of SAM.gov presolicitation notices and attachment text"
-git push -u origin main
-gh variable set DAILY_ENABLED --body false -R abigailhaddad/presolicitations   # leave off until a dry run looks right
-gh secret set HF_TOKEN -R abigailhaddad/presolicitations                      # paste a write token for the dataset
+gh secret set HF_TOKEN -R abigailhaddad/presolicitations
 
-# Hugging Face: create the dataset, then upload the seeded + backfilled tables and the card
-uv run python -c "from huggingface_hub import HfApi; HfApi().create_repo('abigailhaddad/presolicitations', repo_type='dataset', exist_ok=True)"
-HF_TOKEN=... uv run presol --data-dir dataset/data push
+# 2. Create the dataset and put the card up (the card says what the dataset is and what is withheld)
+.venv/bin/hf auth login                      # or: export HF_TOKEN=<write token> for this shell only
+.venv/bin/hf repo create abigailhaddad/presolicitations --repo-type dataset
+.venv/bin/hf upload abigailhaddad/presolicitations dataset/README.md README.md --repo-type dataset
 
-# First checks: dry runs from Actions (Actions tab -> run workflow, leave "publish" off), read run_summary.json.
-# Then: gh variable set DAILY_ENABLED --body true -R abigailhaddad/presolicitations
+# 3. When the local backfill has finished (tail work/backfill.log shows DONE) and this prints "ok": true:
+.venv/bin/python -m presolicitations check
+HF_TOKEN=<write token> .venv/bin/python -m presolicitations --data-dir dataset/data push
+
+# 4. Read the first runs before the schedule is switched on: Actions tab -> "Daily presolicitations" -> Run workflow
+#    (leave "publish" off), open run_summary.json. Then:
+gh variable set DAILY_ENABLED --body true -R abigailhaddad/presolicitations
 ```
 
+If the exclusion rules ever change after data is on the Hub, the pipeline will not delete the old files there
+(it never deletes on the Hub); remove them with `hf repo delete-files` or the web UI.
+
+## The local backfill
+
+Started 2026-11-19 with `nohup scripts/run_backfill.sh`. Chunks of 100 notices (about 5 minutes each), newest
+posted first. Progress, one line per chunk, in `work/backfill.log`:
+
+```bash
+tail -n 5 ~/Documents/repos/presolicitations/work/backfill.log     # latest chunks
+pgrep -f scripts/run_backfill.sh                                   # running? (lowest pid is the script)
+kill $(cat work/backfill.pid)                                      # stop it; start again later with the same command
+```
+
+It stops on its own when nothing is pending (`DONE`), when free disk falls below 10 GB, when a chunk fails (the
+integrity check aborts that chunk and writes nothing from it), or after three chunks in a row with no progress.
+Every finished chunk is already saved, and restarting continues where it stopped. If `work/backfill.lock` is left
+behind after a crash and no script is running, delete that directory.
+
 If `dataset/` is gone, rebuild it: `presol seed --list list.json --final final3.json` (the first manual pull's
-files) then `presol backfill meta`.
+files), `presol backfill meta`, then `presol exclude`.
