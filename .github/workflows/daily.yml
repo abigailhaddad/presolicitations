@@ -1,0 +1,60 @@
+name: Daily presolicitations
+
+# Runs every morning, after SAM.gov refreshes its opportunities CSV (about 03:30 UTC).
+# The scheduled run is OFF until the repository variable DAILY_ENABLED is set to "true"
+# (Settings -> Secrets and variables -> Actions -> Variables). Manual runs always work, and a manual
+# run is a DRY RUN unless you tick "publish".
+# GitHub's schedule can fire hours late; that only delays the data, it never loses any (the collection
+# is append-only and picks up where it left off).
+on:
+  schedule:
+    - cron: "45 6 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to Hugging Face (leave off for a dry run)"
+        type: boolean
+        default: false
+      limit:
+        description: "Process at most this many notices (blank = no limit)"
+        default: ""
+
+# One job at a time may touch the dataset, shared with the backfill so they can never race.
+concurrency:
+  group: presolicitations-data
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  daily:
+    if: github.event_name == 'workflow_dispatch' || vars.DAILY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: command -v pdftotext || sudo apt-get install -y poppler-utils
+      - run: uv run pytest -q   # a broken change stops the day's run
+      - name: Collect
+        shell: bash  # bash -eo pipefail, so `| tee` cannot hide a failure
+        run: |
+          FLAGS=""
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.publish }}" = "true" ]; then
+            FLAGS="--publish"
+          fi
+          if [ -n "${{ inputs.limit }}" ]; then
+            FLAGS="$FLAGS --limit ${{ inputs.limit }}"
+          fi
+          uv run presol --pull daily $FLAGS | tee run_summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-summary
+          path: run_summary.json
+          if-no-files-found: ignore

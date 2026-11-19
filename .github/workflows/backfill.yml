@@ -1,0 +1,67 @@
+name: Backfill presolicitations
+
+# Manual only. Loads every presolicitation in SAM.gov's CSV (phase "meta"), then fetches their
+# attachments, text and live status in chunks (phase "fetch"). Each chunk stops starting new notices
+# after max_minutes, publishes what it has, and the next run continues where it left off, because
+# progress is stored in the dataset itself (a notice is "pending" until its attachments are fetched).
+# Run phase "fetch" again until the summary says pending_after: 0.
+# Always run it as a dry run first (publish off); read run_summary.json.
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "meta = load all notices from the CSV (fast); fetch = attachments, text and live status"
+        type: choice
+        options: [meta, fetch]
+        default: fetch
+      offset:
+        description: "fetch: skip this many pending notices first (normally 0; progress resumes by itself)"
+        default: "0"
+      limit:
+        description: "fetch: notices per run (about 2.8 s each, so 1000 is about 47 minutes)"
+        default: "1000"
+      max_minutes:
+        description: "fetch: stop starting new notices after this many minutes (job limit is 6 hours)"
+        default: "270"
+      publish:
+        description: "Publish to Hugging Face (leave off for a dry run)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: presolicitations-data
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: command -v pdftotext || sudo apt-get install -y poppler-utils
+      - run: uv run pytest -q
+      - name: Backfill
+        shell: bash
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.publish }}" = "true" ]; then FLAGS="--publish"; fi
+          if [ "${{ inputs.phase }}" = "fetch" ]; then
+            EXTRA="--offset ${{ inputs.offset }} --limit ${{ inputs.limit }} --max-seconds $(( ${{ inputs.max_minutes }} * 60 ))"
+          else
+            EXTRA=""
+          fi
+          uv run presol --pull backfill ${{ inputs.phase }} $EXTRA $FLAGS | tee run_summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-summary
+          path: run_summary.json
+          if-no-files-found: ignore

@@ -1,0 +1,9 @@
+# Data lives on Hugging Face, never in git (GitHub's 100 MB file limit; no Git LFS).
+dataset/
+work/
+*.parquet
+.venv/
+__pycache__/
+.pytest_cache/
+run_summary.json
+.DS_Store
