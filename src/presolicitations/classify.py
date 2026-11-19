@@ -9,10 +9,13 @@ Every rule here is a trap the first pull fell into (see review/ in the research 
 * `accessStatus != "public"` is controlled access (needs a SAM.gov login). Never fetched.
 * Only PDF and DOCX are read; everything else is recorded and skipped.
 * More than MAX_FILE_BYTES is recorded and skipped.
+* An attachment whose name says it is an industry-day attendee list (or similar) is recorded and
+  never downloaded; see privacy.py. A list that is only recognisable from its text is excluded after
+  extraction (pipeline._attachment).
 """
 from __future__ import annotations
 
-from . import config
+from . import config, privacy
 from .extract import ext_of
 
 STATUSES = (
@@ -23,21 +26,24 @@ STATUSES = (
     "controlled",    # needs a SAM.gov login
     "skipped_format",
     "big",
+    "excluded",      # withheld on purpose: personal contact data of private individuals (privacy.py)
     "download_error",
     "extract_error",
 )
 
 
 def plan(att: dict) -> dict:
-    """Returns {kind, status, fetch}: `fetch` is True only for an attachment worth downloading."""
+    """Returns {kind, status, fetch, reason}: `fetch` is True only for an attachment worth downloading."""
     name = (att.get("name") or "").strip()
-    out = {"kind": "file", "status": None, "fetch": False}
+    out = {"kind": "file", "status": None, "fetch": False, "reason": None}
     if att.get("type") == "link" or (not name and att.get("uri")):
         out.update(kind="link", status="link")
     elif str(att.get("deletedFlag")) == "1":
         out["status"] = "deleted"
     elif att.get("accessStatus", "public") != "public":
         out["status"] = "controlled"
+    elif privacy.by_name(name):
+        out.update(status="excluded", reason=privacy.EXCLUDED_REASON)
     elif ext_of(name) not in config.FETCHABLE_EXTENSIONS:
         out["status"] = "skipped_format"
     elif (att.get("size") or 0) > config.MAX_FILE_BYTES:

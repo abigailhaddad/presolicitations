@@ -10,7 +10,7 @@ from conftest import MINIMAL_PDF, att, make_docx
 def test_link_attachment_is_not_a_file():
     # regression: 815 link-type attachments were mislabelled "skipped extension"
     p = classify.plan({"type": "link", "uri": "https://www.fedconnect.net/x", "name": None})
-    assert p == {"kind": "link", "status": "link", "fetch": False}
+    assert p == {"kind": "link", "status": "link", "fetch": False, "reason": None}
     assert classify.plan({"name": "", "uri": "https://x"})["status"] == "link"
 
 

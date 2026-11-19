@@ -36,6 +36,7 @@ SCHEMAS: dict[str, dict[str, str]] = {
         "kind": "string", "status": "string", "size_bytes": "Int64", "access": "string",
         "deleted": "boolean", "error": "string", "text_chars": "Int64", "has_text": "boolean",
         "fetched_at": "string", "source": "string", "provenance": "string",
+        "excluded_reason": "string",
     },
     "texts": {"notice_id": "string", "resource_id": "string", "text": "string"},
     "status_history": {
@@ -55,8 +56,15 @@ def empty(table: str) -> pd.DataFrame:
     return pd.DataFrame({c: pd.Series(dtype=t) for c, t in SCHEMAS[table].items()})
 
 
+# Columns added after the first tables were written: an older file without them reads as all-empty.
+OPTIONAL = {"attachments": {"excluded_reason"}}
+
+
 def normalize(df: pd.DataFrame, table: str) -> pd.DataFrame:
     cols = SCHEMAS[table]
+    for c in OPTIONAL.get(table, ()):
+        if c not in df.columns:
+            df = df.assign(**{c: None})
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise ValueError(f"{table}: missing columns {missing}")
@@ -141,3 +149,24 @@ def text_rows(data_dir: str | Path) -> int:
     import pyarrow.parquet as pq
 
     return sum(pq.ParquetFile(f).metadata.num_rows for f in (Path(data_dir) / "texts").glob("*.parquet"))
+
+
+def drop_texts(data_dir: str | Path, keys: set[tuple[str, str]]) -> int:
+    """Remove the text rows for these (notice_id, resource_id) keys. Returns how many were removed.
+
+    The one deliberate exception to "texts are append-only": used only to withhold attachments that
+    privacy.py excludes. A file left with no rows is deleted; the others are rewritten atomically.
+    """
+    removed = 0
+    for f in sorted((Path(data_dir) / "texts").glob("*.parquet")):
+        df = pd.read_parquet(f)
+        drop = [(a, b) in keys for a, b in zip(df["notice_id"], df["resource_id"])]
+        if not any(drop):
+            continue
+        removed += sum(drop)
+        keep = df[[not d for d in drop]]
+        if keep.empty:
+            f.unlink()
+        else:
+            _write(keep, "texts", f)
+    return removed

@@ -90,6 +90,24 @@ def cmd_backfill(args):
         _finish(args, before, after, summary)
 
 
+def cmd_exclude(args):
+    """Withhold attachments that privacy.py excludes from tables already on disk (a safety net, idempotent)."""
+    tables = store.load_tables(args.data_dir, with_texts=True)
+    att, keys, names = pipeline.apply_exclusions(tables, tables["texts"])
+    changed = int((att["status"] != tables["attachments"]["status"]).sum())
+    after = {**tables, "attachments": att, "texts": store.empty("texts")}
+    bad = integrity.check(tables, after, {"attachment_text": 0, "attachment_no_text": 0})
+    if bad:
+        raise SystemExit(f"integrity check failed, nothing written: {'; '.join(bad)}")
+    store.save_all(args.data_dir, after, stamp="exclude")
+    removed = store.drop_texts(args.data_dir, keys)
+    full = store.load_tables(args.data_dir)
+    (Path(args.data_dir).parent / "README.md").write_text(
+        card.render(full, as_of=full["notices"]["last_seen"].max(), text_row_count=store.text_rows(args.data_dir)))
+    print(json.dumps({"attachments_now_excluded": len(keys), "newly_excluded": changed,
+                      "text_rows_removed": removed, "found_by_text_or_name_this_run": names}, indent=1))
+
+
 def cmd_card(args):
     full = store.load_tables(args.data_dir)
     out = Path(args.data_dir).parent / "README.md"
@@ -166,6 +184,7 @@ def main(argv=None) -> int:
     b.add_argument("--seed", type=int, default=7)
     b.set_defaults(fn=cmd_backfill)
 
+    sub.add_parser("exclude", help="withhold attendee-list attachments from the tables on disk").set_defaults(fn=cmd_exclude)
     sub.add_parser("card", help="regenerate README.md").set_defaults(fn=cmd_card)
     sub.add_parser("check", help="run the integrity checks on the tables on disk").set_defaults(fn=cmd_check)
     sub.add_parser("pull").set_defaults(fn=cmd_pull)

@@ -50,15 +50,24 @@ jobs:
       - run: uv run pytest -q
       - name: Backfill
         shell: bash
+        env:  # inputs go through the environment, never straight into the script text
+          PHASE: ${{ inputs.phase }}
+          OFFSET: ${{ inputs.offset }}
+          LIMIT: ${{ inputs.limit }}
+          MAX_MINUTES: ${{ inputs.max_minutes }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
+          for v in "$OFFSET" "$LIMIT" "$MAX_MINUTES"; do
+            case "$v" in (""|*[!0-9]*) echo "offset, limit and max_minutes must be numbers" >&2; exit 2;; esac
+          done
           FLAGS=""
-          if [ "${{ inputs.publish }}" = "true" ]; then FLAGS="--publish"; fi
-          if [ "${{ inputs.phase }}" = "fetch" ]; then
-            EXTRA="--offset ${{ inputs.offset }} --limit ${{ inputs.limit }} --max-seconds $(( ${{ inputs.max_minutes }} * 60 ))"
+          if [ "$PUBLISH" = "true" ]; then FLAGS="--publish"; fi
+          if [ "$PHASE" = "fetch" ]; then
+            EXTRA="--offset $OFFSET --limit $LIMIT --max-seconds $(( MAX_MINUTES * 60 ))"
           else
             EXTRA=""
           fi
-          uv run presol --pull backfill ${{ inputs.phase }} $EXTRA $FLAGS | tee run_summary.json
+          uv run presol --pull backfill "$PHASE" $EXTRA $FLAGS | tee run_summary.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

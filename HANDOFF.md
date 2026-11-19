@@ -93,7 +93,7 @@ the first manual pull's 5 vanished notices (of 1,532) suggested; do not assume e
 * Names: GitHub repo and Hugging Face dataset are both `presolicitations`, under `abigailhaddad`.
 * Public repo and public dataset.
 * Backfill older presolicitations: yes (above).
-* Contacts are published as on SAM.gov: names, emails and phone numbers are **not** stripped.
+* Contacts are published as on SAM.gov: names, emails and phone numbers are **not** stripped, except that industry-day attendee lists are withheld (see below).
 * Still to confirm: licenses. The code is MIT and the data card says CC0; both are proposed, her call.
 
 ## Personal-data scan (2026-11-19; flags only, nothing stripped)
@@ -105,12 +105,19 @@ The 5,457 notices not yet fetched have no attachment text yet; scan again after 
   are `.gov` or `.mil` and 55 are organisations such as real-estate firms and universities; 5,702 phone numbers;
   9,639 names. Descriptions: 2,257 mention an email (3,642 mentions), 1,514 mention a phone number. Attachment
   text: 627 of 1,226 contain an email (2,541 mentions), 372 a phone number.
-* **Flag: attendee lists of private individuals.** 9 attachments in 8 notices are industry-day attendee or
-  sign-in lists (names, company titles, emails, phone numbers): about 542 email and 176 phone mentions. A few
-  attendees give personal addresses (4 distinct consumer-domain addresses, 8 mentions, all in these lists). The agency
-  published them, but they are private individuals' details rather than government contacts. Examples by file name:
-  `Industry Day UNNO Attendees.pdf`, `MINSAV_Industry_Day_Attendee_List.pdf`,
-  `W519TC-26-R-A061 Industry Day Attendees 22-23-Sep-2026.pdf`. Not stripped, as decided.
+* **Decision (2026-11-19): industry-day attendee lists are not published.** 9 attachments in 8 notices of the first
+  pull were attendee or sign-in lists of private individuals (names, company titles, emails, phone numbers), and the
+  backfill sample added 2 more rows of the same files under variant names (11 rows, 10 notices, 7 distinct files in
+  all). Abigail: "we dont need those documents." `privacy.py` withholds them: the attachment ROW stays (name, notice,
+  `status = excluded`, `excluded_reason`), the text is neither downloaded (when the file name gives it away) nor
+  published. Rules: the name says attendee, attendance, registrant, roster, industry-day list or sign-in sheet; or the
+  text has 20+ distinct emails at 5+ per 1,000 characters with under 20% at .gov/.mil. `presol exclude` applies the rule to
+  tables already on disk (idempotent; the only place text rows are removed). After it: 0 text rows for an excluded
+  attachment, 0 consumer-domain (gmail, yahoo, msn...) email mentions in the published text, 0 SSN-shaped numbers
+  (`scripts/scan_personal_data.py`). A looser check (10+ distinct emails, under half .gov/.mil) finds two other
+  files, both contractor specifications of 800 KB to 2.9 MB with a few dozen contacts; neither is a list of people.
+  A blank "Industry Day Registration Form" (.docx, only the agency's three submission addresses) is published.
+  Government points of contact in notices and attachments stay as published (Abigail: "we dont need to drop public data").
 * **Redaction marks.** 0 FOIA-style (b)(6)/(b)(7) marks. The 11 matches were citations to 13 CFR 121.x(b)(6).
 * **Social Security number patterns:** 0. **Consumer-domain emails** (gmail, yahoo, msn...): 0 in the contact
   columns and descriptions.

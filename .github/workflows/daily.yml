@@ -43,13 +43,18 @@ jobs:
       - run: uv run pytest -q   # a broken change stops the day's run
       - name: Collect
         shell: bash  # bash -eo pipefail, so `| tee` cannot hide a failure
+        env:  # inputs go through the environment, never straight into the script text
+          EVENT: ${{ github.event_name }}
+          PUBLISH: ${{ inputs.publish }}
+          LIMIT: ${{ inputs.limit }}
         run: |
           FLAGS=""
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.publish }}" = "true" ]; then
+          if [ "$EVENT" = "schedule" ] || [ "$PUBLISH" = "true" ]; then
             FLAGS="--publish"
           fi
-          if [ -n "${{ inputs.limit }}" ]; then
-            FLAGS="$FLAGS --limit ${{ inputs.limit }}"
+          if [ -n "$LIMIT" ]; then
+            case "$LIMIT" in (*[!0-9]*) echo "limit must be a number" >&2; exit 2;; esac
+            FLAGS="$FLAGS --limit $LIMIT"
           fi
           uv run presol --pull daily $FLAGS | tee run_summary.json
       - uses: actions/upload-artifact@v4

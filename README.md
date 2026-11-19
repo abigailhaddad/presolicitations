@@ -44,6 +44,8 @@ uv run presol --pull daily --publish              # what the workflow runs on sc
 uv run presol backfill meta                       # load every presolicitation in the CSV (no API calls)
 uv run presol --pull backfill fetch --limit 1000 --max-seconds 16200 --publish
 uv run presol check                               # integrity checks on the tables on disk
+uv run presol exclude                             # withhold industry-day attendee lists from tables on disk (privacy.py)
+uv run python scripts/scan_personal_data.py dataset/data   # personal-data scan of what would be published
 ```
 
 Dry run is the default everywhere. `--publish` uploads; `--dry-run` overrides it. Publishing needs
@@ -51,6 +53,13 @@ Dry run is the default everywhere. `--publish` uploads; `--dry-run` overrides it
 
 See [HANDOFF.md](HANDOFF.md) for what runs when, what to do when it breaks, the backfill, and the
 commands to create the GitHub repo and the Hugging Face dataset.
+
+## What is not published
+
+Industry-day attendee and sign-in lists list private individuals' names and emails, and nothing here
+needs them. Their attachment rows stay (`status = excluded`, with `excluded_reason`); their text is not
+downloaded or published (`src/presolicitations/privacy.py`). Government points of contact are kept as
+published on SAM.gov.
 
 ## Licenses
 

@@ -13,6 +13,7 @@ DESC = {
     "controlled": "controlled access (needs a SAM.gov login)",
     "skipped_format": "not a PDF or DOCX (spreadsheets, slides, video, ...), not read",
     "big": f"over {config.MAX_FILE_BYTES // 1_000_000} MB, not downloaded",
+    "excluded": "withheld on purpose: an industry-day attendee list (personal contact data of private individuals)",
     "download_error": "download failed",
     "extract_error": "downloaded, but the file would not open",
 }
@@ -131,6 +132,11 @@ example) can leave literal `&quot;` in the text.
   daily collection is the reliable record from its start date on.
 * Controlled attachments ({_n(status.get("controlled", 0))}) cannot be fetched without a SAM.gov login.
 * Attachments the agency deleted ({_n(status.get("deleted", 0))}) are listed by SAM.gov but cannot be downloaded.
+* {_n(status.get("excluded", 0))} attachments are listed but their text is not published: industry-day
+  attendee and sign-in lists, which name and give the emails of employees of companies who signed up for
+  an event. They are private individuals' contact details, and nothing here needs those documents, so
+  the row stays (`status = excluded`, with `excluded_reason`) and the text does not. Government points of
+  contact in notices are public records and are kept as published.
 * {_n(status.get("no_text", 0))} PDFs came back with no text and are probably scans.
 * Rows seeded by the first manual pull have date-only timestamps, and their `provenance` column says
   where a status was inferred from older records.

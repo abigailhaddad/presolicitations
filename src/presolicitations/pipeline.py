@@ -21,7 +21,7 @@ from collections import Counter
 
 import pandas as pd
 
-from . import classify, config, csvsource, extract, store
+from . import classify, config, csvsource, extract, privacy, store
 from .sam import SamError
 from .seed import sam_url
 
@@ -156,7 +156,7 @@ class Run:
             "kind": p["kind"], "status": p["status"], "size_bytes": a.get("size") or None,
             "access": a.get("accessStatus"), "deleted": str(a.get("deletedFlag")) == "1",
             "error": None, "text_chars": 0, "has_text": False, "fetched_at": self.ts,
-            "source": "daily", "provenance": None,
+            "source": "daily", "provenance": None, "excluded_reason": p["reason"],
         }
         if not p["fetch"]:
             return row
@@ -166,6 +166,11 @@ class Run:
                 row["status"] = "big"
                 return row
             text = extract.extract(name, data)
+            why = privacy.reason(name, text)  # a list recognisable only by its text
+            if why:
+                row["status"], row["excluded_reason"] = "excluded", why
+                self.stats["excluded_by_text"] += 1
+                return row  # the text is dropped here, never stored
             row["status"] = classify.status_after_text(text)
             row["text_chars"] = len(text.strip())
             row["has_text"] = bool(text.strip())
@@ -306,3 +311,25 @@ def backfill_fetch(
     run.stats["pending_after"] = len(run.pending())
     run.stats["seconds"] = round(time.monotonic() - start, 1)
     return run.result()
+
+
+def apply_exclusions(tables: dict[str, pd.DataFrame], texts: pd.DataFrame):
+    """Apply privacy.py to tables already on disk. Returns (attachments, keys whose text must go, names).
+
+    Used once on the first pull's rows and as a safety net: it only ever changes an attachment's status
+    to `excluded`; it never deletes a row.
+    """
+    a = tables["attachments"].copy()
+    text_by_key = dict(zip(zip(texts["notice_id"], texts["resource_id"]), texts["text"]))
+    keys, names = set(), []
+    for i, r in a.iterrows():
+        key = (r["notice_id"], r["resource_id"])
+        if r["status"] == "excluded":
+            keys.add(key)
+            continue
+        why = privacy.reason(r["name"], text_by_key.get(key))
+        if why:
+            a.loc[i, ["status", "excluded_reason", "has_text", "text_chars"]] = ["excluded", why, False, 0]
+            keys.add(key)
+            names.append((r["notice_id"], r["name"]))
+    return store.normalize(a, "attachments"), keys, names

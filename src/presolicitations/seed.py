@@ -63,7 +63,7 @@ def _attachment_row(notice_id: str, x: dict) -> dict:
         "error": err or None,
         "text_chars": len(text.strip()) if text else 0,
         "has_text": bool(text and text.strip()),
-        "fetched_at": SEED_DATE, "source": "seed", "provenance": prov,
+        "fetched_at": SEED_DATE, "source": "seed", "provenance": prov, "excluded_reason": None,
     }
 
 
@@ -125,7 +125,9 @@ def reconcile(tables: dict[str, pd.DataFrame], list_json: list[dict], final3: li
     src_atts = [(r["notice_id"], x) for r in final3 for x in r["files"]]
     if len(a) != len(src_atts):
         bad.append(f"attachments: {len(a)} rows vs {len(src_atts)} in final3")
-    src_text = sum(1 for _, x in src_atts if x.get("text") is not None)
+    # Attachments withheld by privacy.py keep their row but not their text; they are the only allowed gap.
+    withheld = set(a.index[a["status"] == "excluded"])
+    src_text = sum(1 for nid, x in src_atts if x.get("text") is not None and (nid, x["rid"]) not in withheld)
     if len(t) != src_text:
         bad.append(f"texts: {len(t)} rows vs {src_text} with text in final3")
     for row in list_json:
@@ -156,7 +158,10 @@ def reconcile(tables: dict[str, pd.DataFrame], list_json: list[dict], final3: li
         want_size = x.get("size")
         if not (pd.isna(r["size_bytes"]) and want_size is None) and r["size_bytes"] != want_size:
             bad.append(f"attachment {key} size differs")
-        if x.get("text") is not None:
+        if key in withheld:
+            if key in t.index:
+                bad.append(f"attachment {key} is excluded but its text is still in the table")
+        elif x.get("text") is not None:
             if key not in t.index or t.loc[key] != x["text"]:
                 bad.append(f"attachment {key} text differs")
         elif key in t.index:
